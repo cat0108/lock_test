@@ -1,0 +1,83 @@
+diff --git a/include/trace/events/cat.h b/include/trace/events/cat.h
+new file mode 100644
+index 000000000..61d95da18
+--- /dev/null
++++ b/include/trace/events/cat.h
+@@ -0,0 +1,28 @@
++#undef TRACE_SYSTEM
++#define TRACE_SYSTEM cat
++
++#if !defined(_TRACE_CAT_H) || defined(TRACE_HEADER_MULTI_READ)
++#define _TRACE_CAT_H
++
++#include <linux/tracepoint.h>
++#include <linux/ktime.h>
++
++
++TRACE_EVENT(folio_lock_timer,
++    TP_PROTO(int cpu, unsigned long wait_time_ns),
++    TP_ARGS(cpu, wait_time_ns),
++    TP_STRUCT__entry(
++        __field(int, cpu)
++        __field(unsigned long, wait_time_ns)
++    ),
++    TP_fast_assign(
++        __entry->cpu = cpu;
++        __entry->wait_time_ns = wait_time_ns;
++    ),
++    TP_printk("cpu=%d, wait_time_ns=%lu", __entry->cpu, __entry->wait_time_ns)
++);
++
++#endif /* _TRACE_CAT_H */
++
++/* This part must be outside protection */
++#include <trace/define_trace.h>
+diff --git a/mm/memory.c b/mm/memory.c
+index a681671d1..44b200596 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -108,6 +108,9 @@ static vm_fault_t do_fault(struct vm_fault *vmf);
+ static vm_fault_t do_anonymous_page(struct vm_fault *vmf);
+ static bool vmf_pte_changed(struct vm_fault *vmf);
+ 
++#define CREATE_TRACE_POINTS
++#include <trace/events/cat.h>
++
+ /*
+  * Return true if the original pte was a uffd-wp pte marker (so the pte was
+  * wr-protected).
+@@ -4028,6 +4031,11 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
+ 	unsigned long address;
+ 	pte_t *ptep;
+ 
++	ktime_t start_time, end_time;
++	unsigned long wait_time_ns = 0;
++	int cpu = smp_processor_id();
++	static atomic_t counter = ATOMIC_INIT(0);
++
+ 	if (!pte_unmap_same(vmf))
+ 		goto out;
+ 
+@@ -4165,7 +4173,21 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
+ 		goto out_release;
+ 	}
+ 
+-	ret |= folio_lock_or_retry(folio, vmf);
++	if(atomic_read(&counter) % 128 == 0) {
++		start_time = ktime_get();
++		ret |= folio_lock_or_retry(folio, vmf);
++		end_time = ktime_get();
++		wait_time_ns = ktime_to_ns(ktime_sub(end_time, start_time));
++
++		trace_folio_lock_timer(cpu, wait_time_ns);
++
++		atomic_inc(&counter);
++	} else {
++		ret |= folio_lock_or_retry(folio, vmf);
++
++		atomic_inc(&counter);
++	}
++
+ 	if (ret & VM_FAULT_RETRY)
+ 		goto out_release;
+ 
