@@ -16,3 +16,10 @@ several of them using the reStructuredText markup notation.
 Please read the Documentation/process/changes.rst file, as it contains the
 requirements for building and running the kernel, and information about
 the problems which may result by upgrading your kernel.
+
+
+**cat comment**
+Linux kernel version:6.11.5-xanmod1
+test.patch为在内核中添加的补丁代码
+测试程序以及数据处理在_user_test_only文件夹下
+
